@@ -18,6 +18,7 @@ members = [
     "libs/modkit-errors",
     "libs/modkit-errors-macro",
     "libs/modkit-odata",
+    "libs/modkit-transport-grpc",
     "modules/api_ingress",
     "examples/modkit/users_info"
 ]
