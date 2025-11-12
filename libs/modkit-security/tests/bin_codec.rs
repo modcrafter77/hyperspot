@@ -45,4 +45,3 @@ fn decode_rejects_unknown_version() {
         "expected version error, got: {message}"
     );
 }
-

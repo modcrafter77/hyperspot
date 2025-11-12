@@ -5,4 +5,3 @@ fn main() {
         .compile(&["proto/restinvoke.proto"], &["proto"])
         .unwrap();
 }
-

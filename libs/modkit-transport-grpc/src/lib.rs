@@ -9,8 +9,7 @@ use tonic::Status;
 
 /// Encode `SecurityCtx` into gRPC metadata.
 pub fn attach_secctx(meta: &mut MetadataMap, ctx: &SecurityCtx) -> Result<(), Status> {
-    let encoded =
-        encode_bin(ctx).map_err(|e| Status::internal(format!("secctx encode: {e}")))?;
+    let encoded = encode_bin(ctx).map_err(|e| Status::internal(format!("secctx encode: {e}")))?;
 
     meta.insert_bin(SECCTX_METADATA_KEY, MetadataValue::from_bytes(&encoded));
     Ok(())
@@ -26,11 +25,9 @@ pub fn extract_secctx(meta: &MetadataMap) -> Result<SecurityCtx, Status> {
         .to_bytes()
         .map_err(|e| Status::unauthenticated(format!("invalid secctx metadata: {e}")))?;
 
-    decode_bin(bytes.as_ref())
-        .map_err(|e| Status::unauthenticated(format!("secctx decode: {e}")))
+    decode_bin(bytes.as_ref()).map_err(|e| Status::unauthenticated(format!("secctx decode: {e}")))
 }
 
 pub mod restinvoke {
     tonic::include_proto!("modkit.transport.v1");
 }
-

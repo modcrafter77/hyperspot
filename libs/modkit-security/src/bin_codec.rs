@@ -1,7 +1,7 @@
 use crate::SecurityCtx;
-use thiserror::Error;
+use bincode::config::{standard, Config};
 use bincode::error::{DecodeError, EncodeError};
-use bincode::config::{Config, standard};
+use thiserror::Error;
 
 pub const SECCTX_BIN_VERSION: u8 = 1;
 
@@ -36,9 +36,7 @@ impl From<DecodeError> for SecCtxDecodeError {
 }
 
 fn secctx_config() -> impl Config {
-    standard()
-        .with_fixed_int_encoding()
-        .with_little_endian()
+    standard().with_fixed_int_encoding().with_little_endian()
 }
 
 /// Encode SecurityCtx into a versioned binary blob.
@@ -69,8 +67,7 @@ pub fn decode_bin(bytes: &[u8]) -> Result<SecurityCtx, SecCtxDecodeError> {
     let cfg = secctx_config();
 
     // decode_from_slice: Result<(T, usize), DecodeError>
-    let (ctx, _len): (SecurityCtx, usize) =
-        bincode::serde::decode_from_slice(payload, cfg)?;
+    let (ctx, _len): (SecurityCtx, usize) = bincode::serde::decode_from_slice(payload, cfg)?;
 
     Ok(ctx)
 }
