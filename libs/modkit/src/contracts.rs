@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use axum::Router;
 use tokio_util::sync::CancellationToken;
-use tonic::service::RoutesBuilder;
 
 pub use crate::api::OpenApiRegistry;
 
@@ -80,9 +79,15 @@ pub trait StatefulModule: Send + Sync {
 ///
 /// Each module that exposes gRPC services provides one or more of these.
 /// The `register` closure adds the service into the provided `RoutesBuilder`.
+#[cfg(feature = "otel")]
 pub struct RegisterGrpcServiceFn {
     pub service_name: &'static str,
-    pub register: Box<dyn Fn(&mut RoutesBuilder) + Send + Sync>,
+    pub register: Box<dyn Fn(&mut tonic::service::RoutesBuilder) + Send + Sync>,
+}
+
+#[cfg(not(feature = "otel"))]
+pub struct RegisterGrpcServiceFn {
+    pub service_name: &'static str,
 }
 
 /// Trait for modules that export gRPC services.
@@ -99,4 +104,10 @@ pub trait GrpcServiceModule: Send + Sync {
         ctx: &crate::context::ModuleCtx,
     ) -> anyhow::Result<Vec<RegisterGrpcServiceFn>>;
 }
+
+/// Trait for the gRPC hub module that hosts the gRPC server.
+///
+/// This is a marker trait for the single module responsible for hosting
+/// the tonic::Server instance. Only one module per process should implement this.
+pub trait GrpcHubModule: Send + Sync {}
 

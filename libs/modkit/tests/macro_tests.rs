@@ -8,7 +8,6 @@ use modkit::{
     context::{ConfigProvider, ModuleCtx},
     contracts::{DbModule, Module, OpenApiRegistry, RestHostModule, RestfulModule, StatefulModule},
     module,
-    registry::ModuleRegistry,
 };
 use std::sync::Arc;
 

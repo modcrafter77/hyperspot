@@ -651,8 +651,7 @@ pub fn module(attr: TokenStream, item: TokenStream) -> TokenStream {
                 b.register_system_with_meta(#name_lit);
             },
             Capability::GrpcHub => quote! {
-                b.register_grpc_hub_with_meta(#name_lit,
-                    module.clone() as ::std::sync::Arc<dyn ::modkit::contracts::GrpcHubModule>);
+                b.register_grpc_hub_with_meta(#name_lit);
             },
             Capability::Grpc => quote! {
                 b.register_grpc_service_with_meta(#name_lit,

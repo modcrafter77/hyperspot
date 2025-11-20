@@ -12,8 +12,9 @@ modkit = { path = "../../libs/modkit" }
 modkit-transport-grpc = { path = "../../libs/modkit-transport-grpc" }
 tokio = { workspace = true }
 tokio-util = "0.7"
-tonic = { version = "0.12", features = ["transport"] }
-prost = "0.13"
+tonic = { version = "0.14", features = ["transport"] }
+tonic-prost = "0.14"
+prost = { version = "0.14" }
 async-trait = { workspace = true }
 anyhow = { workspace = true }
 tokio-stream = "0.1"
@@ -22,5 +23,5 @@ serde = { workspace = true }
 inventory = "0.3"
 
 [build-dependencies]
-tonic-build = "0.12"
+tonic-prost-build = "0.14"
 

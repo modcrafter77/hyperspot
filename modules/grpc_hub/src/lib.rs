@@ -128,6 +128,8 @@ impl SystemModule for GrpcHub {
     }
 }
 
+impl modkit::contracts::GrpcHubModule for GrpcHub {}
+
 #[async_trait]
 impl Module for GrpcHub {
     async fn init(&self, ctx: &ModuleCtx) -> anyhow::Result<()> {
@@ -376,7 +378,7 @@ mod tests {
 
         let ctx = ModuleCtx::new(
             "grpc_hub",
-            Arc::new(ConfigProviderWithAddr::default()),
+            Arc::new(ConfigProviderWithAddr),
             Arc::new(ClientHub::default()),
             cancel,
             None,
