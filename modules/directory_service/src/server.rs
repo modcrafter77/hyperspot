@@ -20,7 +20,11 @@ use proto::directory::v1::{
     ResolveGrpcServiceResponse,
 };
 
+// Export the service name constant for use by the module
+pub use proto::directory::v1::directory_service_server::SERVICE_NAME;
+
 /// gRPC service implementation that wraps DirectoryApi
+#[derive(Clone)]
 pub struct DirectoryServiceImpl {
     api: Arc<dyn DirectoryApi>,
 }
@@ -56,12 +60,9 @@ impl DirectoryService for DirectoryServiceImpl {
     ) -> Result<Response<ListInstancesResponse>, Status> {
         let module_name = request.into_inner().module_name;
 
-        // Convert into 'static once. This is safe for system module names.
-        let module_name_static: modkit::ModuleName = Box::leak(module_name.into_boxed_str());
-
         let instances = self
             .api
-            .list_instances(module_name_static)
+            .list_instances(&module_name)
             .await
             .map_err(|e| Status::internal(e.to_string()))?;
 
@@ -69,7 +70,7 @@ impl DirectoryService for DirectoryServiceImpl {
             instances: instances
                 .into_iter()
                 .map(|i| InstanceInfo {
-                    module_name: i.module.to_string(),
+                    module_name: i.module,
                     instance_id: i.instance_id,
                     endpoint_uri: i.endpoint.uri,
                     version: i.version.unwrap_or_default(),

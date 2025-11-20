@@ -1,15 +1,33 @@
 use async_trait::async_trait;
 use axum::Router;
-use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
+use tonic::service::RoutesBuilder;
 
 pub use crate::api::OpenApiRegistry;
+
+/// System module: receives runtime internals before init.
+///
+/// This trait is internal to modkit and only used by system modules
+/// (those with the "system" capability). Normal user modules don't implement this.
+pub trait SystemModule: Send + Sync {
+    /// Wire system-level context into this module.
+    ///
+    /// Called once during runtime bootstrap, before init(), for all system modules.
+    fn wire_system(&self, sys: &crate::runtime::SystemContext);
+}
 
 /// Core module: DI/wiring; do not rely on migrated schema here.
 #[async_trait]
 pub trait Module: Send + Sync + 'static {
     async fn init(&self, ctx: &crate::context::ModuleCtx) -> anyhow::Result<()>;
     fn as_any(&self) -> &dyn std::any::Any;
+    
+    /// Return self as a SystemModule if this module has the "system" capability.
+    ///
+    /// Default implementation returns None. System modules override this to return Some(self).
+    fn as_system_module(&self) -> Option<&dyn SystemModule> {
+        None
+    }
 }
 
 #[async_trait]
@@ -58,14 +76,13 @@ pub trait StatefulModule: Send + Sync {
     async fn stop(&self, cancel: CancellationToken) -> anyhow::Result<()>;
 }
 
-/// Opaque handle for a gRPC service registration.
+/// Represents a gRPC service registration callback used by the gRPC hub.
 ///
-/// Core modkit does not know the actual tonic type; modules and grpc_hub downcast as needed.
-/// This keeps the core transport-agnostic.
-pub struct GrpcServiceHandle {
-    pub module_name: &'static str,
+/// Each module that exposes gRPC services provides one or more of these.
+/// The `register` closure adds the service into the provided `RoutesBuilder`.
+pub struct RegisterGrpcServiceFn {
     pub service_name: &'static str,
-    pub inner: Arc<dyn std::any::Any + Send + Sync>,
+    pub register: Box<dyn Fn(&mut RoutesBuilder) + Send + Sync>,
 }
 
 /// Trait for modules that export gRPC services.
@@ -74,30 +91,12 @@ pub struct GrpcServiceHandle {
 /// all services that should be exposed on the shared gRPC server.
 #[async_trait]
 pub trait GrpcServiceModule: Send + Sync {
-    /// Export all gRPC services this module wants to expose.
+    /// Returns all gRPC services this module wants to expose.
     ///
-    /// The returned handles are opaque for the core; concrete modules and grpc_hub
-    /// agree on the actual type stored in `inner`.
-    async fn export_grpc_services(
+    /// Each installer adds one service to the tonic::Server builder.
+    async fn get_grpc_services(
         &self,
         ctx: &crate::context::ModuleCtx,
-    ) -> anyhow::Result<Vec<GrpcServiceHandle>>;
+    ) -> anyhow::Result<Vec<RegisterGrpcServiceFn>>;
 }
 
-/// Trait for the single gRPC hub module that hosts all gRPC services.
-///
-/// There should be exactly one module with the `grpc_hub` capability per process.
-/// It is responsible for starting a single gRPC server and wiring all services into it.
-#[async_trait]
-pub trait GrpcHubModule: Send + Sync {
-    /// Called once by the runtime after all modules are initialized.
-    ///
-    /// `services` contains all exported gRPC service handles from modules that have
-    /// the `grpc` capability. The hub is responsible for binding a single port and
-    /// wiring all services into one tonic::Server (or equivalent).
-    async fn run_grpc_host(
-        self: Arc<Self>,
-        ctx: &crate::context::ModuleCtx,
-        services: Vec<GrpcServiceHandle>,
-    ) -> anyhow::Result<()>;
-}

@@ -4,13 +4,12 @@ use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize)]
 pub struct DirectoryServiceConfig {
-    pub bind_addr: String,
+    // No transport config needed - gRPC hub handles the bind
+    // Future: could add service-level config here (timeouts, etc.)
 }
 
 impl Default for DirectoryServiceConfig {
     fn default() -> Self {
-        Self {
-            bind_addr: "127.0.0.1:7444".to_string(),
-        }
+        Self {}
     }
 }

@@ -70,7 +70,7 @@ pub use inventory;
 
 // Module system exports
 pub use crate::contracts::*;
-pub use crate::contracts::{GrpcHubModule, GrpcServiceHandle, GrpcServiceModule};
+pub use crate::contracts::{GrpcServiceModule, RegisterGrpcServiceFn};
 pub mod context;
 pub use context::{
     module_config_typed, ConfigError, ConfigProvider, ConfigProviderExt, ModuleContextBuilder,
@@ -122,8 +122,8 @@ pub use directory::{DirectoryApi, ServiceInstanceInfo};
 
 pub use lifecycle::{Lifecycle, Runnable, Status, StopReason, WithLifecycle};
 pub use runtime::{
-    get_global_instance_directory, run, set_global_instance_directory, BackendKind, DbOptions,
-    Endpoint, InstanceDirectory, InstanceHandle, LocalProcessBackend, ModuleInstance, ModuleName,
+    run, BackendKind, DbOptions,
+    Endpoint, InstanceHandle, LocalProcessBackend, ModuleInstance, ModuleManager, ModuleName,
     ModuleRuntimeBackend, OopModuleConfig, RunOptions, ShutdownOptions,
 };
 

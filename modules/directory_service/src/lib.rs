@@ -2,36 +2,32 @@
 
 use anyhow::Result;
 use async_trait::async_trait;
-use std::net::SocketAddr;
+use parking_lot::RwLock as BlockingRwLock;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio_util::sync::CancellationToken;
 
 use modkit::context::ModuleCtx;
+use modkit::contracts::SystemModule;
+use modkit::directory::LocalDirectoryApi;
+use modkit::runtime::ModuleManager;
 use modkit::DirectoryApi;
 
-mod client;
 mod config;
-mod grpc_client;
 mod server;
 
-use client::DirectoryLocalClient;
-
-// Re-export the gRPC client for use by other modules
 use config::DirectoryServiceConfig;
-pub use grpc_client::DirectoryGrpcClient;
 use server::make_directory_service;
 
-/// Directory service module - hosts the gRPC DirectoryService
+/// Directory service module - exports a gRPC DirectoryService to the process grpc_hub
 #[modkit::module(
     name = "directory_service",
-    capabilities = [stateful, system],
+    capabilities = [grpc, system],
     client = modkit::DirectoryApi
 )]
 pub struct DirectoryServiceModule {
     config: RwLock<DirectoryServiceConfig>,
     directory_api: RwLock<Option<Arc<dyn DirectoryApi>>>,
-    server_handle: RwLock<Option<tokio::task::JoinHandle<Result<()>>>>,
+    module_manager: BlockingRwLock<Option<Arc<ModuleManager>>>,
 }
 
 impl Default for DirectoryServiceModule {
@@ -39,8 +35,15 @@ impl Default for DirectoryServiceModule {
         Self {
             config: RwLock::new(DirectoryServiceConfig::default()),
             directory_api: RwLock::new(None),
-            server_handle: RwLock::new(None),
+            module_manager: BlockingRwLock::new(None),
         }
+    }
+}
+
+impl SystemModule for DirectoryServiceModule {
+    fn wire_system(&self, sys: &modkit::runtime::SystemContext) {
+        let mut guard = self.module_manager.write();
+        *guard = Some(Arc::clone(&sys.module_manager));
     }
 }
 
@@ -50,8 +53,15 @@ impl modkit::Module for DirectoryServiceModule {
         let cfg = ctx.config::<DirectoryServiceConfig>()?;
         *self.config.write().await = cfg;
 
-        // Build DirectoryApi over the global InstanceDirectory
-        let api_impl: Arc<dyn DirectoryApi> = Arc::new(DirectoryLocalClient::new());
+        // Use the injected ModuleManager instead of a global singleton
+        let manager = self
+            .module_manager
+            .read()
+            .as_ref()
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("ModuleManager not wired into DirectoryServiceModule"))?;
+
+        let api_impl: Arc<dyn DirectoryApi> = Arc::new(LocalDirectoryApi::new(manager));
 
         // Register in ClientHub using the generated helper function
         expose_directory_service_client(ctx, &api_impl)?;
@@ -64,14 +74,19 @@ impl modkit::Module for DirectoryServiceModule {
     fn as_any(&self) -> &dyn std::any::Any {
         self
     }
+
+    fn as_system_module(&self) -> Option<&dyn SystemModule> {
+        Some(self)
+    }
 }
 
+/// Export gRPC services to grpc_hub
 #[async_trait]
-impl modkit::contracts::StatefulModule for DirectoryServiceModule {
-    async fn start(&self, cancel: CancellationToken) -> Result<()> {
-        let cfg = self.config.read().await.clone();
-        let addr: SocketAddr = cfg.bind_addr.parse()?;
-
+impl modkit::contracts::GrpcServiceModule for DirectoryServiceModule {
+    async fn get_grpc_services(
+        &self,
+        _ctx: &ModuleCtx,
+    ) -> Result<Vec<modkit::contracts::RegisterGrpcServiceFn>> {
         let api = self
             .directory_api
             .read()
@@ -80,43 +95,16 @@ impl modkit::contracts::StatefulModule for DirectoryServiceModule {
             .cloned()
             .ok_or_else(|| anyhow::anyhow!("DirectoryApi not initialized"))?;
 
+        // Build tonic service once and move it into the installer closure
         let svc = make_directory_service(api);
+        let installer = modkit::contracts::RegisterGrpcServiceFn {
+            service_name: server::SERVICE_NAME,
+            register: Box::new(move |routes| {
+                // The service implements Service<Request<Body>> + NamedService
+                routes.add_service(svc.clone());
+            }),
+        };
 
-        let listener = tokio::net::TcpListener::bind(addr).await?;
-        tracing::info!("directory_service gRPC bound on {}", addr);
-
-        let cancel_for_server = cancel.clone();
-        let handle = tokio::spawn(async move {
-            let shutdown = async move {
-                cancel_for_server.cancelled().await;
-                tracing::info!("directory_service shutting down");
-            };
-
-            tonic::transport::Server::builder()
-                .add_service(svc)
-                .serve_with_incoming_shutdown(
-                    tokio_stream::wrappers::TcpListenerStream::new(listener),
-                    shutdown,
-                )
-                .await
-                .map_err(|e| anyhow::anyhow!("gRPC server error: {}", e))
-        });
-
-        *self.server_handle.write().await = Some(handle);
-
-        Ok(())
-    }
-
-    async fn stop(&self, _cancel: CancellationToken) -> Result<()> {
-        // Take the handle and drop the write guard before awaiting
-        let handle = self.server_handle.write().await.take();
-
-        if let Some(handle) = handle {
-            // Wait for the server to finish shutting down
-            handle
-                .await
-                .map_err(|e| anyhow::anyhow!("failed to join server task: {}", e))??;
-        }
-        Ok(())
+        Ok(vec![installer])
     }
 }

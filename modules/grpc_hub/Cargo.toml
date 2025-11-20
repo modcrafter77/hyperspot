@@ -16,10 +16,12 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true }
 tokio-util = { version = "0.7", features = ["rt"] }
+tower = "0.5"
 tracing = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 parking_lot = { workspace = true }
+http = "1.3"
 
 # gRPC server
 tonic = "0.14.2"
