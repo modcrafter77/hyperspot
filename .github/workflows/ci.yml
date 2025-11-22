@@ -85,7 +85,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/sccache
-          key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: sccache-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             sccache-${{ runner.os }}-
 
@@ -242,7 +242,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/sccache
-          key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: sccache-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             sccache-${{ runner.os }}-
 
@@ -323,7 +323,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/sccache
-          key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: sccache-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             sccache-${{ runner.os }}-
 
@@ -400,7 +400,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ runner.temp }}/sccache
-          key: sccache-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          key: sccache-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             sccache-${{ runner.os }}-
 
