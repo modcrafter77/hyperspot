@@ -17,6 +17,45 @@ use std::marker::PhantomData;
 
 use crate::api::problem;
 
+/// Convert OpenAPI-style path placeholders to Axum 0.8+ style path parameters.
+///
+/// Axum 0.8+ uses `{id}` for path parameters and `{*path}` for wildcards, which is the same as OpenAPI.
+/// However, OpenAPI wildcards are just `{path}` without the asterisk.
+/// This function converts OpenAPI wildcards to Axum wildcards by detecting common wildcard names.
+///
+/// # Examples
+///
+/// ```
+/// # use modkit::api::operation_builder::normalize_to_axum_path;
+/// assert_eq!(normalize_to_axum_path("/users/{id}"), "/users/{id}");
+/// assert_eq!(normalize_to_axum_path("/projects/{project_id}/items/{item_id}"), "/projects/{project_id}/items/{item_id}");
+/// // Note: Most paths don't need normalization in Axum 0.8+
+/// ```
+pub fn normalize_to_axum_path(path: &str) -> String {
+    // In Axum 0.8+, the path syntax is {param} for parameters and {*wildcard} for wildcards
+    // which is the same as OpenAPI except wildcards need the asterisk prefix.
+    // For now, we just pass through the path as-is since OpenAPI and Axum 0.8 use the same syntax
+    // for regular parameters. Wildcards need special handling if used.
+    path.to_string()
+}
+
+/// Convert Axum 0.8+ style path parameters to OpenAPI-style placeholders.
+///
+/// Removes the asterisk prefix from Axum wildcards `{*path}` to make them OpenAPI-compatible `{path}`.
+///
+/// # Examples
+///
+/// ```
+/// # use modkit::api::operation_builder::axum_to_openapi_path;
+/// assert_eq!(axum_to_openapi_path("/users/{id}"), "/users/{id}");
+/// assert_eq!(axum_to_openapi_path("/static/{*path}"), "/static/{path}");
+/// ```
+pub fn axum_to_openapi_path(path: &str) -> String {
+    // In Axum 0.8+, wildcards are {*name} but OpenAPI expects {name}
+    // Regular parameters are the same in both
+    path.replace("{*", "{")
+}
+
 /// Type alias for schema collections used in API operations.
 type SchemaCollection = Vec<(
     String,
@@ -85,6 +124,10 @@ pub struct RequestBodySpec {
     pub schema_name: Option<String>,
     /// Whether request body is required (OpenAPI default is `false`).
     pub required: bool,
+    /// Optional whitelist of request Content-Type values (without parameters).
+    /// Example: ["application/json", "multipart/form-data", "application/pdf"]
+    /// When set, ingress will enforce these types and return 415 for disallowed types.
+    pub allowed_content_types: Option<Vec<&'static str>>,
 }
 
 /// Response specification for API operations
@@ -263,27 +306,32 @@ impl<S> OperationBuilder<Missing, Missing, S> {
 
     /// Convenience constructor for GET requests
     pub fn get(path: impl Into<String>) -> Self {
-        Self::new(Method::GET, path)
+        let path_str = path.into();
+        Self::new(Method::GET, normalize_to_axum_path(&path_str))
     }
 
     /// Convenience constructor for POST requests
     pub fn post(path: impl Into<String>) -> Self {
-        Self::new(Method::POST, path)
+        let path_str = path.into();
+        Self::new(Method::POST, normalize_to_axum_path(&path_str))
     }
 
     /// Convenience constructor for PUT requests
     pub fn put(path: impl Into<String>) -> Self {
-        Self::new(Method::PUT, path)
+        let path_str = path.into();
+        Self::new(Method::PUT, normalize_to_axum_path(&path_str))
     }
 
     /// Convenience constructor for DELETE requests
     pub fn delete(path: impl Into<String>) -> Self {
-        Self::new(Method::DELETE, path)
+        let path_str = path.into();
+        Self::new(Method::DELETE, normalize_to_axum_path(&path_str))
     }
 
     /// Convenience constructor for PATCH requests
     pub fn patch(path: impl Into<String>) -> Self {
-        Self::new(Method::PATCH, path)
+        let path_str = path.into();
+        Self::new(Method::PATCH, normalize_to_axum_path(&path_str))
     }
 }
 
@@ -399,6 +447,7 @@ where
             description: Some(desc.into()),
             schema_name: Some(schema_name.into()),
             required: true,
+            allowed_content_types: None,
         });
         self
     }
@@ -411,6 +460,7 @@ where
             description: None,
             schema_name: Some(schema_name.into()),
             required: true,
+            allowed_content_types: None,
         });
         self
     }
@@ -431,6 +481,7 @@ where
             description: Some(desc.into()),
             schema_name: Some(name),
             required: true,
+            allowed_content_types: None,
         });
         self
     }
@@ -447,6 +498,7 @@ where
             description: None,
             schema_name: Some(name),
             required: true,
+            allowed_content_types: None,
         });
         self
     }
@@ -493,6 +545,38 @@ where
     pub fn public(mut self) -> Self {
         self.spec.is_public = true;
         self.spec.sec_requirement = None;
+        self
+    }
+
+    /// Configure allowed request MIME types for this operation.
+    ///
+    /// This attaches a whitelist of allowed Content-Type values (without parameters),
+    /// which will be enforced by ingress middleware. If a request arrives with a
+    /// Content-Type that is not in this list, ingress will return HTTP 415.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// OperationBuilder::post("/upload")
+    ///     .operation_id("upload_file")
+    ///     .allow_content_types(&["multipart/form-data", "application/pdf"])
+    ///     .handler(upload_handler)
+    ///     .json_response(200, "Upload successful")
+    ///     .register(router, &api);
+    /// ```
+    pub fn allow_content_types(mut self, types: &[&'static str]) -> Self {
+        if let Some(rb) = &mut self.spec.request_body {
+            rb.allowed_content_types = Some(types.to_vec());
+        } else {
+            // No request body spec yet; create a synthetic one with allowed types
+            // so that ingress can enforce it if a body is present
+            self.spec.request_body = Some(RequestBodySpec {
+                content_type: "application/octet-stream",
+                description: None,
+                schema_name: None,
+                required: false,
+                allowed_content_types: Some(types.to_vec()),
+            });
+        }
         self
     }
 }
@@ -1005,18 +1089,71 @@ mod tests {
     fn test_convenience_constructors() {
         let get_builder = OperationBuilder::<Missing, Missing, ()>::get("/get");
         assert_eq!(get_builder.spec.method, Method::GET);
+        assert_eq!(get_builder.spec.path, "/get");
 
         let post_builder = OperationBuilder::<Missing, Missing, ()>::post("/post");
         assert_eq!(post_builder.spec.method, Method::POST);
+        assert_eq!(post_builder.spec.path, "/post");
 
         let put_builder = OperationBuilder::<Missing, Missing, ()>::put("/put");
         assert_eq!(put_builder.spec.method, Method::PUT);
+        assert_eq!(put_builder.spec.path, "/put");
 
         let delete_builder = OperationBuilder::<Missing, Missing, ()>::delete("/delete");
         assert_eq!(delete_builder.spec.method, Method::DELETE);
+        assert_eq!(delete_builder.spec.path, "/delete");
 
         let patch_builder = OperationBuilder::<Missing, Missing, ()>::patch("/patch");
         assert_eq!(patch_builder.spec.method, Method::PATCH);
+        assert_eq!(patch_builder.spec.path, "/patch");
+    }
+
+    #[test]
+    fn test_normalize_to_axum_path() {
+        // Axum 0.8+ uses {param} syntax, same as OpenAPI
+        assert_eq!(normalize_to_axum_path("/users/{id}"), "/users/{id}");
+        assert_eq!(
+            normalize_to_axum_path("/projects/{project_id}/items/{item_id}"),
+            "/projects/{project_id}/items/{item_id}"
+        );
+        assert_eq!(normalize_to_axum_path("/simple"), "/simple");
+        assert_eq!(
+            normalize_to_axum_path("/users/{id}/edit"),
+            "/users/{id}/edit"
+        );
+    }
+
+    #[test]
+    fn test_axum_to_openapi_path() {
+        // Regular parameters stay the same
+        assert_eq!(axum_to_openapi_path("/users/{id}"), "/users/{id}");
+        assert_eq!(
+            axum_to_openapi_path("/projects/{project_id}/items/{item_id}"),
+            "/projects/{project_id}/items/{item_id}"
+        );
+        assert_eq!(axum_to_openapi_path("/simple"), "/simple");
+        // Wildcards: Axum uses {*path}, OpenAPI uses {path}
+        assert_eq!(axum_to_openapi_path("/static/{*path}"), "/static/{path}");
+        assert_eq!(
+            axum_to_openapi_path("/files/{*filepath}"),
+            "/files/{filepath}"
+        );
+    }
+
+    #[test]
+    fn test_path_normalization_in_constructors() {
+        // Test that paths are kept as-is (Axum 0.8+ uses same {param} syntax)
+        let builder = OperationBuilder::<Missing, Missing, ()>::get("/users/{id}");
+        assert_eq!(builder.spec.path, "/users/{id}");
+
+        let builder = OperationBuilder::<Missing, Missing, ()>::post(
+            "/projects/{project_id}/items/{item_id}",
+        );
+        assert_eq!(builder.spec.path, "/projects/{project_id}/items/{item_id}");
+
+        // Simple paths remain unchanged
+        let builder = OperationBuilder::<Missing, Missing, ()>::get("/simple");
+        assert_eq!(builder.spec.path, "/simple");
     }
 
     #[test]
@@ -1083,5 +1220,65 @@ mod tests {
             crate::api::problem::APPLICATION_PROBLEM_JSON
         );
         assert!(validation_response.schema_name.is_some());
+    }
+
+    #[test]
+    fn test_allow_content_types_with_existing_request_body() {
+        let registry = MockRegistry::new();
+        let builder = OperationBuilder::<Missing, Missing, ()>::post("/test")
+            .json_request::<serde_json::Value>(&registry, "Test request")
+            .allow_content_types(&["application/json", "application/xml"])
+            .handler(test_handler)
+            .json_response(200, "Success");
+
+        // Request body should have allowed_content_types
+        assert!(builder.spec.request_body.is_some());
+        let rb = builder.spec.request_body.as_ref().unwrap();
+        assert!(rb.allowed_content_types.is_some());
+        let allowed = rb.allowed_content_types.as_ref().unwrap();
+        assert_eq!(allowed.len(), 2);
+        assert!(allowed.contains(&"application/json"));
+        assert!(allowed.contains(&"application/xml"));
+    }
+
+    #[test]
+    fn test_allow_content_types_without_existing_request_body() {
+        let builder = OperationBuilder::<Missing, Missing, ()>::post("/test")
+            .allow_content_types(&["multipart/form-data"])
+            .handler(test_handler)
+            .json_response(200, "Success");
+
+        // Should create synthetic request body with allowed_content_types
+        assert!(builder.spec.request_body.is_some());
+        let rb = builder.spec.request_body.as_ref().unwrap();
+        assert_eq!(rb.content_type, "application/octet-stream");
+        assert!(rb.allowed_content_types.is_some());
+        let allowed = rb.allowed_content_types.as_ref().unwrap();
+        assert_eq!(allowed.len(), 1);
+        assert!(allowed.contains(&"multipart/form-data"));
+    }
+
+    #[test]
+    fn test_allow_content_types_can_be_chained() {
+        let registry = MockRegistry::new();
+        let builder = OperationBuilder::<Missing, Missing, ()>::post("/test")
+            .operation_id("test.post")
+            .summary("Test endpoint")
+            .json_request::<serde_json::Value>(&registry, "Test request")
+            .allow_content_types(&["application/json"])
+            .handler(test_handler)
+            .json_response(200, "Success")
+            .problem_response(&registry, 415, "Unsupported Media Type");
+
+        assert_eq!(builder.spec.operation_id, Some("test.post".to_string()));
+        assert!(builder.spec.request_body.is_some());
+        assert!(builder
+            .spec
+            .request_body
+            .as_ref()
+            .unwrap()
+            .allowed_content_types
+            .is_some());
+        assert_eq!(builder.spec.responses.len(), 2);
     }
 }

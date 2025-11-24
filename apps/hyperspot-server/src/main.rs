@@ -1,3 +1,5 @@
+mod registered_modules;
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use figment::Figment;
@@ -21,18 +23,6 @@ impl modkit::ConfigProvider for ModkitConfigAdapter {
     fn get_module_config(&self, module_name: &str) -> Option<&serde_json::Value> {
         self.0.get_module_config(module_name)
     }
-}
-
-// Ensure modules are linked and registered via inventory
-#[allow(dead_code)]
-fn _ensure_modules_linked() {
-    // Make sure all modules are linked
-    let _ = std::any::type_name::<api_ingress::ApiIngress>();
-    let _ = std::any::type_name::<grpc_hub::GrpcHub>();
-    let _ = std::any::type_name::<directory_service::DirectoryServiceModule>();
-
-    #[cfg(feature = "users-info-example")]
-    let _ = std::any::type_name::<users_info::UsersInfo>();
 }
 
 // Bring runner types & our per-module DB factory

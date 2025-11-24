@@ -271,12 +271,21 @@ impl ApiIngress {
             }
         }
 
-        // 8. Per-route rate limiting & in-flight limits (after CORS, before auth)
+        // 8. MIME type validation (after CORS, before rate limiting)
         let specs: Vec<_> = self
             .operation_specs
             .iter()
             .map(|e| e.value().clone())
             .collect();
+        let mime_map = middleware::mime_validation::build_mime_validation_map(&specs);
+        router = router.layer(from_fn(
+            move |req: axum::extract::Request, next: axum::middleware::Next| {
+                let map = mime_map.clone();
+                middleware::mime_validation::mime_validation_middleware(map, req, next)
+            },
+        ));
+
+        // 9. Per-route rate limiting & in-flight limits (after MIME validation, before auth)
         let rate_map = middleware::rate_limit::RateLimiterMap::from_specs(&specs, &config);
         router = router.layer(from_fn(
             move |req: axum::extract::Request, next: axum::middleware::Next| {
@@ -285,10 +294,10 @@ impl ApiIngress {
             },
         ));
 
-        // 9. Error mapping layer (no-op converter for now; keeps order explicit)
+        // 10. Error mapping layer (no-op converter for now; keeps order explicit)
         router = router.layer(from_fn(modkit::api::error_layer::error_mapping_middleware));
 
-        // 10. Auth middleware - MUST be after CORS; preflight short-circuits before this.
+        // 11. Auth middleware - MUST be after CORS; preflight short-circuits before this.
         let config = self.get_cached_config();
         if config.auth_disabled {
             tracing::warn!(
@@ -504,7 +513,9 @@ impl ApiIngress {
             };
 
             let item = PathItemBuilder::new().operation(method, op.build()).build();
-            paths = paths.path(spec.path.clone(), item);
+            // Convert Axum-style path to OpenAPI-style path
+            let openapi_path = modkit::api::operation_builder::axum_to_openapi_path(&spec.path);
+            paths = paths.path(openapi_path, item);
         }
 
         // 2) Components (from our registry)
@@ -960,5 +971,114 @@ mod sse_openapi_tests {
             .pointer("/components/schemas/UserEvent")
             .expect("UserEvent missing");
         assert!(schema.get("$ref").is_none());
+    }
+
+    #[tokio::test]
+    async fn test_axum_to_openapi_path_conversion() {
+        let api = ApiIngress::default();
+        let router = axum::Router::new();
+
+        // Define a route with path parameters using Axum 0.8+ style {id}
+        async fn user_handler() -> Json<Value> {
+            Json(serde_json::json!({"user_id": "123"}))
+        }
+
+        let _router = OperationBuilder::<Missing, Missing, ()>::get("/users/{id}")
+            .summary("Get user by ID")
+            .path_param("id", "User ID")
+            .handler(user_handler)
+            .json_response(200, "User details")
+            .register(router, &api);
+
+        // Verify the operation was stored with {id} path (same for Axum 0.8 and OpenAPI)
+        let ops: Vec<_> = api
+            .operation_specs
+            .iter()
+            .map(|e| e.value().clone())
+            .collect();
+        assert_eq!(ops.len(), 1);
+        assert_eq!(ops[0].path, "/users/{id}");
+
+        // Verify OpenAPI doc also has {id} (no conversion needed for regular params)
+        let doc = api.build_openapi().expect("openapi");
+        let v = serde_json::to_value(&doc).expect("json");
+
+        let paths = v.get("paths").expect("paths");
+        assert!(
+            paths.get("/users/{id}").is_some(),
+            "OpenAPI should use {{id}} placeholder"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_multiple_path_params_conversion() {
+        let api = ApiIngress::default();
+        let router = axum::Router::new();
+
+        async fn item_handler() -> Json<Value> {
+            Json(serde_json::json!({"ok": true}))
+        }
+
+        let _router =
+            OperationBuilder::<Missing, Missing, ()>::get("/projects/{project_id}/items/{item_id}")
+                .summary("Get project item")
+                .path_param("project_id", "Project ID")
+                .path_param("item_id", "Item ID")
+                .handler(item_handler)
+                .json_response(200, "Item details")
+                .register(router, &api);
+
+        // Verify storage and OpenAPI both use {param} syntax
+        let ops: Vec<_> = api
+            .operation_specs
+            .iter()
+            .map(|e| e.value().clone())
+            .collect();
+        assert_eq!(ops[0].path, "/projects/{project_id}/items/{item_id}");
+
+        let doc = api.build_openapi().expect("openapi");
+        let v = serde_json::to_value(&doc).expect("json");
+        let paths = v.get("paths").expect("paths");
+        assert!(paths
+            .get("/projects/{project_id}/items/{item_id}")
+            .is_some());
+    }
+
+    #[tokio::test]
+    async fn test_wildcard_path_conversion() {
+        let api = ApiIngress::default();
+        let router = axum::Router::new();
+
+        async fn static_handler() -> Json<Value> {
+            Json(serde_json::json!({"ok": true}))
+        }
+
+        // Axum 0.8 uses {*path} for wildcards
+        let _router = OperationBuilder::<Missing, Missing, ()>::get("/static/{*path}")
+            .summary("Serve static files")
+            .handler(static_handler)
+            .json_response(200, "File content")
+            .register(router, &api);
+
+        // Verify internal storage keeps Axum wildcard syntax {*path}
+        let ops: Vec<_> = api
+            .operation_specs
+            .iter()
+            .map(|e| e.value().clone())
+            .collect();
+        assert_eq!(ops[0].path, "/static/{*path}");
+
+        // Verify OpenAPI converts wildcard to {path} (without asterisk)
+        let doc = api.build_openapi().expect("openapi");
+        let v = serde_json::to_value(&doc).expect("json");
+        let paths = v.get("paths").expect("paths");
+        assert!(
+            paths.get("/static/{path}").is_some(),
+            "Wildcard {{*path}} should be converted to {{path}} in OpenAPI"
+        );
+        assert!(
+            paths.get("/static/{*path}").is_none(),
+            "OpenAPI should not have Axum-style {{*path}}"
+        );
     }
 }
