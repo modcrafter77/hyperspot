@@ -2,9 +2,13 @@ syntax = "proto3";
 
 package modkit.directory.v1;
 
+import "google/protobuf/empty.proto";
+
 service DirectoryService {
   rpc ResolveGrpcService(ResolveGrpcServiceRequest) returns (ResolveGrpcServiceResponse);
   rpc ListInstances(ListInstancesRequest) returns (ListInstancesResponse);
+  rpc RegisterInstance(RegisterInstanceRequest) returns (google.protobuf.Empty);
+  rpc Heartbeat(HeartbeatRequest) returns (google.protobuf.Empty);
 }
 
 message ResolveGrpcServiceRequest {
@@ -28,5 +32,18 @@ message InstanceInfo {
 
 message ListInstancesResponse {
   repeated InstanceInfo instances = 1;
+}
+
+message RegisterInstanceRequest {
+  string module_name = 1;
+  string instance_id = 2;
+  string control_endpoint = 3;
+  repeated string grpc_services = 4;
+  string version = 5;
+}
+
+message HeartbeatRequest {
+  string module_name = 1;
+  string instance_id = 2;
 }
 

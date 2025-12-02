@@ -1,0 +1,23 @@
+[package]
+name = "modkit-oop-bootstrap"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+# Local crates
+modkit = { path = "../modkit" }
+modkit-bootstrap = { path = "../modkit-bootstrap" }
+modkit-transport-grpc = { path = "../modkit-transport-grpc" }
+directory-grpc-stubs = { path = "../../grpc-stubs/directory-grpc-stubs" }
+
+# Core dependencies
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+serde_json = { workspace = true }
+tonic = { version = "0.14", features = ["transport"] }
+async-trait = { workspace = true }
+

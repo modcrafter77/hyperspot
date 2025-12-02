@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 use super::super::backend::{BackendKind, OopModuleConfig};
 use super::ModuleRuntimeBackend;
-use crate::runtime::{InstanceHandle, ModuleName};
+use crate::runtime::InstanceHandle;
 
 /// Internal representation of a local process instance
 struct LocalInstance {
@@ -72,7 +72,7 @@ impl ModuleRuntimeBackend for LocalProcessBackend {
 
         // Create handle
         let handle = InstanceHandle {
-            module: cfg.name,
+            module: cfg.name.to_string(),
             instance_id: instance_id.clone(),
             backend: BackendKind::LocalProcess,
             pid,
@@ -134,7 +134,7 @@ impl ModuleRuntimeBackend for LocalProcessBackend {
         Ok(())
     }
 
-    async fn list_instances(&self, module: ModuleName) -> Result<Vec<InstanceHandle>> {
+    async fn list_instances(&self, module: &str) -> Result<Vec<InstanceHandle>> {
         let instances = self.instances.read();
 
         let result = instances
@@ -283,7 +283,7 @@ mod tests {
     async fn test_stop_nonexistent_instance() {
         let backend = LocalProcessBackend::new();
         let handle = InstanceHandle {
-            module: "test_module",
+            module: "test_module".to_string(),
             instance_id: "nonexistent".to_string(),
             backend: BackendKind::LocalProcess,
             pid: None,

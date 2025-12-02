@@ -1,0 +1,16 @@
+[package]
+name = "directory-grpc-stubs"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+build = "build.rs"
+
+[dependencies]
+tonic = { version = "0.14", features = ["transport"] }
+tonic-prost = "0.14"
+prost = { version = "0.14" }
+
+[build-dependencies]
+tonic-prost-build = "0.14"
+

@@ -5,9 +5,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-/// Common module identifier
-pub type ModuleName = &'static str;
-
 /// Represents an endpoint where a module instance can be reached
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct Endpoint {
@@ -75,7 +72,7 @@ pub struct InstanceRuntimeState {
 /// Represents a single instance of a module
 #[derive(Debug)]
 pub struct ModuleInstance {
-    pub module: ModuleName,
+    pub module: String,
     pub instance_id: String,
     pub control: Option<Endpoint>,
     pub grpc_services: HashMap<String, Endpoint>,
@@ -86,7 +83,7 @@ pub struct ModuleInstance {
 impl Clone for ModuleInstance {
     fn clone(&self) -> Self {
         Self {
-            module: self.module,
+            module: self.module.clone(),
             instance_id: self.instance_id.clone(),
             control: self.control.clone(),
             grpc_services: self.grpc_services.clone(),
@@ -97,9 +94,9 @@ impl Clone for ModuleInstance {
 }
 
 impl ModuleInstance {
-    pub fn new(module: ModuleName, instance_id: impl Into<String>) -> Self {
+    pub fn new(module: impl Into<String>, instance_id: impl Into<String>) -> Self {
         Self {
-            module,
+            module: module.into(),
             instance_id: instance_id.into(),
             control: None,
             grpc_services: HashMap::new(),
@@ -141,7 +138,7 @@ impl ModuleInstance {
 /// Provides discovery, health tracking, and round-robin load balancing.
 #[derive(Clone)]
 pub struct ModuleManager {
-    inner: DashMap<ModuleName, Vec<Arc<ModuleInstance>>>,
+    inner: DashMap<String, Vec<Arc<ModuleInstance>>>,
     rr_counters: DashMap<String, usize>,
     hb_ttl: Duration,
     hb_grace: Duration,
@@ -177,7 +174,7 @@ impl ModuleManager {
 
     /// Register or update a module instance
     pub fn register_instance(&self, instance: Arc<ModuleInstance>) {
-        let module = instance.module;
+        let module = instance.module.clone();
         let mut vec = self.inner.entry(module).or_default();
         // replace by instance_id if it already exists
         if let Some(pos) = vec
@@ -191,7 +188,7 @@ impl ModuleManager {
     }
 
     /// Mark an instance as ready
-    pub fn mark_ready(&self, module: ModuleName, instance_id: &str) {
+    pub fn mark_ready(&self, module: &str, instance_id: &str) {
         if let Some(mut vec) = self.inner.get_mut(module) {
             if let Some(inst) = vec.iter_mut().find(|i| i.instance_id == instance_id) {
                 let mut state = inst.inner.write();
@@ -201,7 +198,7 @@ impl ModuleManager {
     }
 
     /// Update the heartbeat timestamp for an instance
-    pub fn update_heartbeat(&self, module: ModuleName, instance_id: &str, at: Instant) {
+    pub fn update_heartbeat(&self, module: &str, instance_id: &str, at: Instant) {
         if let Some(mut vec) = self.inner.get_mut(module) {
             if let Some(inst) = vec.iter_mut().find(|i| i.instance_id == instance_id) {
                 let mut state = inst.inner.write();
@@ -215,7 +212,7 @@ impl ModuleManager {
     }
 
     /// Mark an instance as quarantined
-    pub fn mark_quarantined(&self, module: ModuleName, instance_id: &str) {
+    pub fn mark_quarantined(&self, module: &str, instance_id: &str) {
         if let Some(mut vec) = self.inner.get_mut(module) {
             if let Some(inst) = vec.iter_mut().find(|i| i.instance_id == instance_id) {
                 inst.inner.write().state = InstanceState::Quarantined;
@@ -224,7 +221,7 @@ impl ModuleManager {
     }
 
     /// Remove an instance from the directory
-    pub fn deregister(&self, module: ModuleName, instance_id: &str) {
+    pub fn deregister(&self, module: &str, instance_id: &str) {
         let mut remove_module = false;
         {
             if let Some(mut vec) = self.inner.get_mut(module) {
@@ -237,21 +234,13 @@ impl ModuleManager {
         }
 
         if remove_module {
-            self.inner.remove(&module);
-            self.rr_counters.remove(&module.to_string());
+            self.inner.remove(module);
+            self.rr_counters.remove(module);
         }
     }
 
     /// Get all instances of a specific module
-    pub fn instances_of(&self, module: ModuleName) -> Vec<Arc<ModuleInstance>> {
-        self.inner
-            .get(module)
-            .map(|v| v.clone())
-            .unwrap_or_default()
-    }
-
-    /// Get all instances of a specific module by string name (used by public APIs)
-    pub fn instances_of_static(&self, module: &str) -> Vec<Arc<ModuleInstance>> {
+    pub fn instances_of(&self, module: &str) -> Vec<Arc<ModuleInstance>> {
         self.inner
             .get(module)
             .map(|v| v.clone())
@@ -272,7 +261,7 @@ impl ModuleManager {
         let mut empty_modules = Vec::new();
 
         for mut entry in self.inner.iter_mut() {
-            let module = *entry.key();
+            let module = entry.key().clone();
             let vec = entry.value_mut();
             vec.retain(|inst| {
                 let state = inst.inner.read();
@@ -300,12 +289,12 @@ impl ModuleManager {
 
         for module in empty_modules {
             self.inner.remove(&module);
-            self.rr_counters.remove(&module.to_string());
+            self.rr_counters.remove(&module);
         }
     }
 
     /// Pick an instance using round-robin selection, preferring healthy instances
-    pub fn pick_instance_round_robin(&self, module: ModuleName) -> Option<Arc<ModuleInstance>> {
+    pub fn pick_instance_round_robin(&self, module: &str) -> Option<Arc<ModuleInstance>> {
         let instances_entry = self.inner.get(module)?;
         let instances = instances_entry.value();
 
@@ -331,8 +320,7 @@ impl ModuleManager {
         }
 
         let len = candidates.len();
-        let module_key = module.to_string();
-        let mut counter = self.rr_counters.entry(module_key).or_insert(0);
+        let mut counter = self.rr_counters.entry(module.to_string()).or_insert(0);
         let idx = *counter % len;
         *counter = (*counter + 1) % len;
 
@@ -344,16 +332,16 @@ impl ModuleManager {
     pub fn pick_service_round_robin(
         &self,
         service_name: &str,
-    ) -> Option<(ModuleName, Arc<ModuleInstance>, Endpoint)> {
+    ) -> Option<(String, Arc<ModuleInstance>, Endpoint)> {
         // Collect all instances that provide this service
         let mut candidates = Vec::new();
         for entry in self.inner.iter() {
-            let module = *entry.key();
+            let module = entry.key().clone();
             for inst in entry.value().iter() {
                 if let Some(ep) = inst.grpc_services.get(service_name) {
                     let state = inst.state();
                     if matches!(state, InstanceState::Healthy | InstanceState::Ready) {
-                        candidates.push((module, inst.clone(), ep.clone()));
+                        candidates.push((module.clone(), inst.clone(), ep.clone()));
                     }
                 }
             }
@@ -487,9 +475,9 @@ mod tests {
         let all = dir.all_instances();
         assert_eq!(all.len(), 3);
 
-        let modules: Vec<_> = all.iter().map(|i| i.module).collect();
-        assert_eq!(modules.iter().filter(|&&m| m == "module_a").count(), 2);
-        assert_eq!(modules.iter().filter(|&&m| m == "module_b").count(), 1);
+        let modules: Vec<_> = all.iter().map(|i| i.module.as_str()).collect();
+        assert_eq!(modules.iter().filter(|&m| *m == "module_a").count(), 2);
+        assert_eq!(modules.iter().filter(|&m| *m == "module_b").count(), 1);
     }
 
     #[test]

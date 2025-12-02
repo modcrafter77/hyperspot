@@ -3,25 +3,18 @@
 use std::sync::Arc;
 use tonic::{Request, Response, Status};
 
-use modkit::DirectoryApi;
+use modkit::{DirectoryApi, RegisterInstanceInfo};
+use modkit::runtime::Endpoint;
 
-/// Generated protobuf types
-pub mod proto {
-    pub mod directory {
-        pub mod v1 {
-            tonic::include_proto!("modkit.directory.v1");
-        }
-    }
-}
-
-use proto::directory::v1::{
-    directory_service_server::{DirectoryService, DirectoryServiceServer},
-    InstanceInfo, ListInstancesRequest, ListInstancesResponse, ResolveGrpcServiceRequest,
-    ResolveGrpcServiceResponse,
+// Import from grpc-stubs
+use directory_grpc_stubs::{
+    DirectoryService, DirectoryServiceServer,
+    HeartbeatRequest, InstanceInfo, ListInstancesRequest, ListInstancesResponse,
+    RegisterInstanceRequest, ResolveGrpcServiceRequest, ResolveGrpcServiceResponse,
 };
 
 // Export the service name constant for use by the module
-pub use proto::directory::v1::directory_service_server::SERVICE_NAME;
+pub const SERVICE_NAME: &str = directory_grpc_stubs::pb::directory_service_server::SERVICE_NAME;
 
 /// gRPC service implementation that wraps DirectoryApi
 #[derive(Clone)]
@@ -79,6 +72,66 @@ impl DirectoryService for DirectoryServiceImpl {
         };
 
         Ok(Response::new(resp))
+    }
+
+    async fn register_instance(
+        &self,
+        request: Request<RegisterInstanceRequest>,
+    ) -> Result<Response<()>, Status> {
+        let req = request.into_inner();
+
+        // Convert RegisterInstanceRequest to RegisterInstanceInfo
+        let control_endpoint = if req.control_endpoint.is_empty() {
+            None
+        } else {
+            Some(Endpoint::from_uri(req.control_endpoint))
+        };
+
+        // For now, we only have service names in the proto.
+        // In the future, we could extend the proto to include per-service endpoints.
+        // For now, we'll create dummy endpoints or skip this field.
+        let grpc_services = req
+            .grpc_services
+            .into_iter()
+            .map(|name| {
+                // Use a placeholder endpoint since we don't have individual service endpoints
+                // in the proto yet. This can be extended later if needed.
+                (name.clone(), Endpoint::from_uri(format!("placeholder://{}", name)))
+            })
+            .collect();
+
+        let info = RegisterInstanceInfo {
+            module: req.module_name,
+            instance_id: req.instance_id,
+            control_endpoint,
+            grpc_services,
+            version: if req.version.is_empty() {
+                None
+            } else {
+                Some(req.version)
+            },
+        };
+
+        self.api
+            .register_instance(info)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to register instance: {}", e)))?;
+
+        Ok(Response::new(()))
+    }
+
+    async fn heartbeat(
+        &self,
+        request: Request<HeartbeatRequest>,
+    ) -> Result<Response<()>, Status> {
+        let req = request.into_inner();
+
+        self.api
+            .send_heartbeat(&req.module_name, &req.instance_id)
+            .await
+            .map_err(|e| Status::internal(format!("Failed to send heartbeat: {}", e)))?;
+
+        Ok(Response::new(()))
     }
 }
 

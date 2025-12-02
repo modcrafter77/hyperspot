@@ -20,6 +20,6 @@ pub use backends::{LocalProcessBackend, ModuleRuntimeBackend};
 
 pub use grpc_installers::GrpcInstallerStore;
 pub use host_runtime::{DbOptions, HostRuntime};
-pub use module_manager::{Endpoint, InstanceState, ModuleInstance, ModuleManager, ModuleName};
+pub use module_manager::{Endpoint, InstanceState, ModuleInstance, ModuleManager};
 pub use runner::{run, RunOptions, ShutdownOptions};
 pub use system_context::SystemContext;

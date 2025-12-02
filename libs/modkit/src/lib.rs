@@ -124,12 +124,12 @@ pub use result::ApiResult;
 
 // Directory API for service discovery
 pub mod directory;
-pub use directory::{DirectoryApi, ServiceInstanceInfo};
+pub use directory::{DirectoryApi, RegisterInstanceInfo, ServiceInstanceInfo};
 
 pub use lifecycle::{Lifecycle, Runnable, Status, StopReason, WithLifecycle};
 pub use runtime::{
     run, BackendKind, DbOptions, Endpoint, InstanceHandle, LocalProcessBackend, ModuleInstance,
-    ModuleManager, ModuleName, ModuleRuntimeBackend, OopModuleConfig, RunOptions, ShutdownOptions,
+    ModuleManager, ModuleRuntimeBackend, OopModuleConfig, RunOptions, ShutdownOptions,
 };
 
 #[cfg(test)]

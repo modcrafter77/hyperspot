@@ -15,8 +15,11 @@ use modkit::DirectoryApi;
 mod config;
 mod server;
 
-use config::DirectoryServiceConfig;
-use server::make_directory_service;
+pub use config::DirectoryServiceConfig;
+pub use server::make_directory_service;
+
+// Export gRPC client for use by OoP modules
+pub mod grpc_client;
 
 /// Directory service module - exports a gRPC DirectoryService to the process grpc_hub
 #[modkit::module(

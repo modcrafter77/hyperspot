@@ -15,7 +15,7 @@ pub enum BackendKind {
 
 /// Configuration for an out-of-process module
 pub struct OopModuleConfig {
-    pub name: crate::runtime::ModuleName,
+    pub name: &'static str,
     pub binary: Option<PathBuf>,
     pub args: Vec<String>,
     pub env: HashMap<String, String>,
@@ -24,7 +24,7 @@ pub struct OopModuleConfig {
 }
 
 impl OopModuleConfig {
-    pub fn new(name: crate::runtime::ModuleName, backend: BackendKind) -> Self {
+    pub fn new(name: &'static str, backend: BackendKind) -> Self {
         Self {
             name,
             binary: None,
@@ -39,7 +39,7 @@ impl OopModuleConfig {
 /// A handle to a running module instance
 #[derive(Clone)]
 pub struct InstanceHandle {
-    pub module: crate::runtime::ModuleName,
+    pub module: String,
     pub instance_id: String,
     pub backend: BackendKind,
     pub pid: Option<u32>,
@@ -90,7 +90,7 @@ mod tests {
     #[test]
     fn test_instance_handle_debug() {
         let handle = InstanceHandle {
-            module: "test_module",
+            module: "test_module".to_string(),
             instance_id: "test-123".to_string(),
             backend: BackendKind::LocalProcess,
             pid: Some(12345),

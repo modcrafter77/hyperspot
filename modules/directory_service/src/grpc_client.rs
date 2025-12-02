@@ -6,12 +6,13 @@ use anyhow::Result;
 use async_trait::async_trait;
 use tonic::transport::Channel;
 
-use modkit::runtime::{Endpoint, ModuleName};
-use modkit::{DirectoryApi, ServiceInstanceInfo};
+use modkit::runtime::Endpoint;
+use modkit::{DirectoryApi, RegisterInstanceInfo, ServiceInstanceInfo};
 use modkit_transport_grpc::client::GrpcClientConfig;
 
-use crate::server::proto::directory::v1::{
-    directory_service_client::DirectoryServiceClient, ListInstancesRequest,
+// Import from grpc-stubs
+use directory_grpc_stubs::{
+    DirectoryServiceClient, HeartbeatRequest, ListInstancesRequest, RegisterInstanceRequest,
     ResolveGrpcServiceRequest,
 };
 
@@ -89,7 +90,7 @@ impl DirectoryApi for DirectoryGrpcClient {
         })
     }
 
-    async fn list_instances(&self, module: ModuleName) -> Result<Vec<ServiceInstanceInfo>> {
+    async fn list_instances(&self, module: &str) -> Result<Vec<ServiceInstanceInfo>> {
         let mut client = self.inner.clone();
         let request = tonic::Request::new(ListInstancesRequest {
             module_name: module.to_string(),
@@ -106,27 +107,69 @@ impl DirectoryApi for DirectoryGrpcClient {
         let instances = proto_response
             .instances
             .into_iter()
-            .map(|proto_inst| {
-                // Convert module_name back to 'static str (safe for known module names)
-                let module_name_static: ModuleName =
-                    Box::leak(proto_inst.module_name.into_boxed_str());
-
-                ServiceInstanceInfo {
-                    module: module_name_static,
-                    instance_id: proto_inst.instance_id,
-                    endpoint: Endpoint {
-                        uri: proto_inst.endpoint_uri,
-                    },
-                    version: if proto_inst.version.is_empty() {
-                        None
-                    } else {
-                        Some(proto_inst.version)
-                    },
-                }
+            .map(|proto_inst| ServiceInstanceInfo {
+                module: proto_inst.module_name,
+                instance_id: proto_inst.instance_id,
+                endpoint: Endpoint {
+                    uri: proto_inst.endpoint_uri,
+                },
+                version: if proto_inst.version.is_empty() {
+                    None
+                } else {
+                    Some(proto_inst.version)
+                },
             })
             .collect();
 
         Ok(instances)
+    }
+
+    async fn register_instance(&self, info: RegisterInstanceInfo) -> Result<()> {
+        let mut client = self.inner.clone();
+
+        let control = info
+            .control_endpoint
+            .as_ref()
+            .map(|e| e.uri.clone())
+            .unwrap_or_default();
+
+        // For now, pass only service names. If needed later, extend proto with per-service endpoints.
+        let grpc_services = info
+            .grpc_services
+            .into_iter()
+            .map(|(name, _ep)| name)
+            .collect();
+
+        let req = RegisterInstanceRequest {
+            module_name: info.module,
+            instance_id: info.instance_id,
+            control_endpoint: control,
+            grpc_services,
+            version: info.version.unwrap_or_default(),
+        };
+
+        client
+            .register_instance(tonic::Request::new(req))
+            .await
+            .map_err(|e| anyhow::anyhow!("gRPC register_instance failed: {}", e))?;
+
+        Ok(())
+    }
+
+    async fn send_heartbeat(&self, module: &str, instance_id: &str) -> Result<()> {
+        let mut client = self.inner.clone();
+
+        let req = HeartbeatRequest {
+            module_name: module.to_string(),
+            instance_id: instance_id.to_string(),
+        };
+
+        client
+            .heartbeat(tonic::Request::new(req))
+            .await
+            .map_err(|e| anyhow::anyhow!("gRPC heartbeat failed: {}", e))?;
+
+        Ok(())
     }
 }
 

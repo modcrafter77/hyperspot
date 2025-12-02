@@ -19,6 +19,8 @@ members = [
     "libs/modkit-errors-macro",
     "libs/modkit-odata",
     "libs/modkit-transport-grpc",
+    "libs/modkit-oop-bootstrap",
+    "grpc-stubs/directory-grpc-stubs",
     "modules/api_ingress",
     "modules/directory_service",
     "modules/grpc_hub",

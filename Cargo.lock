@@ -1006,20 +1006,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "directory-grpc-stubs"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+]
+
+[[package]]
 name = "directory_service"
 version = "0.1.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "directory-grpc-stubs",
  "inventory",
  "modkit",
+ "modkit-transport-grpc",
  "parking_lot",
- "prost",
  "serde",
  "tokio",
  "tonic",
- "tonic-prost",
- "tonic-prost-build",
  "tracing",
 ]
 
@@ -2577,6 +2586,23 @@ dependencies = [
  "sha2",
  "thiserror 2.0.17",
  "utoipa",
+ "uuid",
+]
+
+[[package]]
+name = "modkit-oop-bootstrap"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "directory-grpc-stubs",
+ "modkit",
+ "modkit-bootstrap",
+ "modkit-transport-grpc",
+ "serde_json",
+ "tokio",
+ "tonic",
+ "tracing",
  "uuid",
 ]
 

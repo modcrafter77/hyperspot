@@ -4,7 +4,7 @@ use anyhow::Result;
 use async_trait::async_trait;
 
 use crate::runtime::backend::OopModuleConfig;
-use crate::runtime::{InstanceHandle, ModuleName};
+use crate::runtime::InstanceHandle;
 
 /// Trait for backends that can spawn and manage module instances
 #[async_trait]
@@ -13,7 +13,7 @@ pub trait ModuleRuntimeBackend: Send + Sync {
 
     async fn stop_instance(&self, handle: &InstanceHandle) -> Result<()>;
 
-    async fn list_instances(&self, module: ModuleName) -> Result<Vec<InstanceHandle>>;
+    async fn list_instances(&self, module: &str) -> Result<Vec<InstanceHandle>>;
 }
 
 // Local backend submodule
